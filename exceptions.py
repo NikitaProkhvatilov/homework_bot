@@ -1,4 +1,2 @@
-class HomeworkNotFound(Exception):
-    """Исключение, если в указанный период отстутсвуют сданные работы."""
-
-    pass
+class UnexpectedStatus(Exception):
+    """Исключение, если получен неожиданный статус."""
