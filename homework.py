@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 import requests
 from telebot import TeleBot, apihelper
 
-from exceptions import UnexpectedStatus
 
 load_dotenv()
 
@@ -32,12 +31,16 @@ logger = logging.getLogger(__name__)
 def check_tokens():
     """Проверка наличия доступности переменных окружения."""
     tokens = (PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
+    str_tokens = ('PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
     for token in tokens:
-        if not token:
-            logger.critical(f'Не найдена переменная окружения: {token}')
-            os._exit()
-    if all(tokens):
-        logger.info('Все токены в наличии')
+        for str_token in str_tokens:
+            if not token:
+                logger.critical(
+                    f'Не найдена переменная окружения: {str_token}')
+            else:
+                logger.info(f'Токен {str_token} в наличии')
+    if not all(tokens):
+        exit()
 
 
 def send_message(bot, message):
@@ -46,6 +49,8 @@ def send_message(bot, message):
         bot.send_message(TELEGRAM_CHAT_ID, message)
     except apihelper.ApiException:
         logger.error('Не удалось отправить сообщение.')
+    except requests.RequestException:
+        logger.error('Не удалось получить ответ сервера.')
     else:
         logger.debug('Сообщение отправлено.')
 
@@ -54,10 +59,14 @@ def get_api_answer(timestamp):
     """Отправка запроса и получение ответа."""
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=timestamp)
+        if response.status_code != 200:
+            raise requests.HTTPError(
+                f'Неожиданный стаутс ответа: {response.status_code}')
+    except requests.HTTPError as error:
+        logger.error(error)
+        raise
     except requests.RequestException:
-        logger.error('Не удалось получить ответ.')
-    if response.status_code != 200:
-        raise requests.HTTPError('Не удалось получить ответ.')
+        logger.error('Не удалось получить ответ сервера.')
     return response.json()
 
 
@@ -66,7 +75,11 @@ def check_response(response):
     if not isinstance(response, dict):
         raise TypeError('Неверный формат данных, ожидается словарь.')
     if response.get('current_date') is None:
-        raise KeyError('Отсутствует ключ current_date')
+        logger.info('Ключ current_date отсутствует.')
+    if not isinstance(response.get('current_date'), int):
+        logger.info(
+            'Значения ключа current_date'
+            'не соответствует ожидаемому типу данных.')
     if response.get('homeworks') is None:
         raise KeyError('Отсутствует ключ homeworks')
     homeworks = response.get('homeworks')
@@ -82,7 +95,7 @@ def parse_status(homeworks):
         raise KeyError('Ошибка получения имени.')
     status = homeworks.get('status')
     if status not in HOMEWORK_VERDICTS:
-        raise UnexpectedStatus('Ошибка получения статуса.')
+        raise KeyError('Ошибка получения статуса.')
     verdict = HOMEWORK_VERDICTS[status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -95,12 +108,14 @@ def main():
     while True:
         try:
             answer = get_api_answer({'from_date': 0})
-            homeworks = check_response(answer)[0]
+            homeworks = check_response(answer)
             if len(homeworks) != 0:
-                message = parse_status(homeworks)
+                message = parse_status(homeworks[0])
             else:
                 message = 'Список домашних работ пуст.'
                 logger.debug('Домашние работы не найдены.')
+        except requests.exceptions.InvalidJSONError as error:
+            logger.error(error, exc_info=True)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(error, exc_info=True)
@@ -115,7 +130,7 @@ if __name__ == '__main__':
     logging.basicConfig(
         format=FORMAT,
         level=logging.DEBUG,
-        filename='main.log',
+        filename=r'C:\\Users\\Nikita\\Desktop\\Dev\\homework_bot\\main.log',
         filemode='w'
     )
     main()
