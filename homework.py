@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import time
@@ -6,6 +7,7 @@ from dotenv import load_dotenv
 import requests
 from telebot import TeleBot, apihelper
 
+from exceptions import WrongStatus
 
 load_dotenv()
 
@@ -30,27 +32,24 @@ logger = logging.getLogger(__name__)
 
 def check_tokens():
     """Проверка наличия доступности переменных окружения."""
-    tokens = (PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
-    str_tokens = ('PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
-    for token in tokens:
-        for str_token in str_tokens:
-            if not token:
-                logger.critical(
-                    f'Не найдена переменная окружения: {str_token}')
-            else:
-                logger.info(f'Токен {str_token} в наличии')
-    if not all(tokens):
-        exit()
+    tokens_dict = {
+        'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
+        'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID}
+    for token in tokens_dict:
+        if not tokens_dict[token]:
+            logger.critical(
+                f'Не найдена переменная окружения: {token}')
+    if not all(tokens_dict.values()):
+        quit()
 
 
 def send_message(bot, message):
     """Отправка сообщения."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-    except apihelper.ApiException:
-        logger.error('Не удалось отправить сообщение.')
-    except requests.RequestException:
-        logger.error('Не удалось получить ответ сервера.')
+    except (apihelper.ApiException, requests.RequestException) as error:
+        logger.error(f'Не удалось отправить сообщение: {error}')
     else:
         logger.debug('Сообщение отправлено.')
 
@@ -60,26 +59,20 @@ def get_api_answer(timestamp):
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=timestamp)
         if response.status_code != 200:
-            raise requests.HTTPError(
+            raise WrongStatus(
                 f'Неожиданный стаутс ответа: {response.status_code}')
-    except requests.HTTPError as error:
-        logger.error(error)
-        raise
-    except requests.RequestException:
-        logger.error('Не удалось получить ответ сервера.')
-    return response.json()
+        return response.json()
+    except json.JSONDecodeError as error:
+        logger.error(f'Ошибка формата ответа: {error}')
+    except requests.RequestException as error:
+        logger.error(
+            f'Не удалось получить ответ сервера: {error}', exc_info=True)
 
 
 def check_response(response):
     """Получение последней сданной работы."""
     if not isinstance(response, dict):
         raise TypeError('Неверный формат данных, ожидается словарь.')
-    if response.get('current_date') is None:
-        logger.info('Ключ current_date отсутствует.')
-    if not isinstance(response.get('current_date'), int):
-        logger.info(
-            'Значения ключа current_date'
-            'не соответствует ожидаемому типу данных.')
     if response.get('homeworks') is None:
         raise KeyError('Отсутствует ключ homeworks')
     homeworks = response.get('homeworks')
@@ -95,7 +88,7 @@ def parse_status(homeworks):
         raise KeyError('Ошибка получения имени.')
     status = homeworks.get('status')
     if status not in HOMEWORK_VERDICTS:
-        raise KeyError('Ошибка получения статуса.')
+        raise ValueError('Ошибка получения статуса.')
     verdict = HOMEWORK_VERDICTS[status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -108,14 +101,18 @@ def main():
     while True:
         try:
             answer = get_api_answer({'from_date': 0})
+            if answer.get('current_date') is None:
+                logger.error('Ключ current_date отсутствует.')
+            if not isinstance(answer.get('current_date'), int):
+                logger.error(
+                    'Значения ключа current_date'
+                    'не соответствует ожидаемому типу данных.')
             homeworks = check_response(answer)
             if len(homeworks) != 0:
                 message = parse_status(homeworks[0])
             else:
                 message = 'Список домашних работ пуст.'
                 logger.debug('Домашние работы не найдены.')
-        except requests.exceptions.InvalidJSONError as error:
-            logger.error(error, exc_info=True)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(error, exc_info=True)
@@ -130,7 +127,7 @@ if __name__ == '__main__':
     logging.basicConfig(
         format=FORMAT,
         level=logging.DEBUG,
-        filename=r'C:\\Users\\Nikita\\Desktop\\Dev\\homework_bot\\main.log',
+        filename='logs\\main.log',
         filemode='w'
     )
     main()
