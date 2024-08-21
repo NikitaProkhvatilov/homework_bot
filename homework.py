@@ -1,13 +1,15 @@
 import json
 import logging
 import os
+from pathlib import Path
+import sys
 import time
 
 from dotenv import load_dotenv
 import requests
 from telebot import TeleBot, apihelper
 
-from exceptions import WrongStatus
+from exceptions import WrongStatus, CurrentDateNotFound, CurrentDateWrongFormat
 
 load_dotenv()
 
@@ -27,21 +29,23 @@ HOMEWORK_VERDICTS = {
 FORMAT = (
     '%(asctime)s %(name)s %(levelname)s %(funcName)s %(lineno)d  %(message)s')
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 logger = logging.getLogger(__name__)
 
 
 def check_tokens():
     """Проверка наличия доступности переменных окружения."""
-    tokens_dict = {
+    tokens = {
         'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID}
-    for token in tokens_dict:
-        if not tokens_dict[token]:
+    for token in tokens:
+        if not tokens[token]:
             logger.critical(
                 f'Не найдена переменная окружения: {token}')
-    if not all(tokens_dict.values()):
-        quit()
+    if not all(tokens.values()):
+        sys.exit()
 
 
 def send_message(bot, message):
@@ -62,17 +66,18 @@ def get_api_answer(timestamp):
             raise WrongStatus(
                 f'Неожиданный стаутс ответа: {response.status_code}')
         return response.json()
-    except json.JSONDecodeError as error:
-        logger.error(f'Ошибка формата ответа: {error}')
-    except requests.RequestException as error:
-        logger.error(
-            f'Не удалось получить ответ сервера: {error}', exc_info=True)
+    except requests.RequestException:
+        pass
 
 
 def check_response(response):
     """Получение последней сданной работы."""
     if not isinstance(response, dict):
         raise TypeError('Неверный формат данных, ожидается словарь.')
+    if response.get('current_date') is None:
+        raise CurrentDateNotFound()
+    if not isinstance(response.get('current_date'), int):
+        raise CurrentDateWrongFormat()
     if response.get('homeworks') is None:
         raise KeyError('Отсутствует ключ homeworks')
     homeworks = response.get('homeworks')
@@ -101,21 +106,26 @@ def main():
     while True:
         try:
             answer = get_api_answer({'from_date': 0})
-            if answer.get('current_date') is None:
-                logger.error('Ключ current_date отсутствует.')
-            if not isinstance(answer.get('current_date'), int):
-                logger.error(
-                    'Значения ключа current_date'
-                    'не соответствует ожидаемому типу данных.')
             homeworks = check_response(answer)
             if len(homeworks) != 0:
                 message = parse_status(homeworks[0])
             else:
                 message = 'Список домашних работ пуст.'
                 logger.debug('Домашние работы не найдены.')
+        except CurrentDateNotFound:
+            logger.error('Ключ current_date отсутствует.')
+        except CurrentDateWrongFormat:
+            logger.error(
+                'Значения ключа current_date'
+                'не соответствует ожидаемому типу данных.')
+        except json.JSONDecodeError as error:
+            logger.error(f'Ошибка формата ответа: {error}')
+        except requests.RequestException as error:
+            logger.error(
+                f'Не удалось получить ответ сервера: {error}')
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            logger.error(error, exc_info=True)
+            logger.error(error)
         finally:
             if message != last_status:
                 last_status = message
@@ -127,7 +137,7 @@ if __name__ == '__main__':
     logging.basicConfig(
         format=FORMAT,
         level=logging.DEBUG,
-        filename='logs\\main.log',
+        filename=BASE_DIR / 'main.log',
         filemode='w'
     )
     main()
