@@ -29,7 +29,7 @@ HOMEWORK_VERDICTS = {
 FORMAT = (
     '%(asctime)s %(name)s %(levelname)s %(funcName)s %(lineno)d  %(message)s')
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = os.path.dirname(Path(__file__))
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def check_tokens():
             logger.critical(
                 f'Не найдена переменная окружения: {token}')
     if not all(tokens.values()):
-        sys.exit()
+        sys.exit(1)
 
 
 def send_message(bot, message):
@@ -66,8 +66,10 @@ def get_api_answer(timestamp):
             raise WrongStatus(
                 f'Неожиданный стаутс ответа: {response.status_code}')
         return response.json()
-    except requests.RequestException:
-        pass
+    except json.JSONDecodeError as error:
+        print(f'Ошибка формата JSON: {error}')
+    except requests.RequestException as error:
+        print(f'Возникла ошибка: {error}')
 
 
 def check_response(response):
@@ -75,9 +77,11 @@ def check_response(response):
     if not isinstance(response, dict):
         raise TypeError('Неверный формат данных, ожидается словарь.')
     if response.get('current_date') is None:
-        raise CurrentDateNotFound()
+        raise CurrentDateNotFound('Ключ current_date отсутствует.')
     if not isinstance(response.get('current_date'), int):
-        raise CurrentDateWrongFormat()
+        raise CurrentDateWrongFormat('Значения ключа current_date'
+                                     'не соответствует ожидаемому'
+                                     'типу данных.')
     if response.get('homeworks') is None:
         raise KeyError('Отсутствует ключ homeworks')
     homeworks = response.get('homeworks')
@@ -112,12 +116,8 @@ def main():
             else:
                 message = 'Список домашних работ пуст.'
                 logger.debug('Домашние работы не найдены.')
-        except CurrentDateNotFound:
-            logger.error('Ключ current_date отсутствует.')
-        except CurrentDateWrongFormat:
-            logger.error(
-                'Значения ключа current_date'
-                'не соответствует ожидаемому типу данных.')
+        except (CurrentDateNotFound, CurrentDateWrongFormat) as error:
+            logger.error(error)
         except json.JSONDecodeError as error:
             logger.error(f'Ошибка формата ответа: {error}')
         except requests.RequestException as error:
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     logging.basicConfig(
         format=FORMAT,
         level=logging.DEBUG,
-        filename=BASE_DIR / 'main.log',
+        filename=os.path.join(BASE_DIR, 'main.log'),
         filemode='w'
     )
     main()
