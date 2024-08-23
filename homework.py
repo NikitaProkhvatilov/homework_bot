@@ -67,9 +67,10 @@ def get_api_answer(timestamp):
                 f'Неожиданный стаутс ответа: {response.status_code}')
         return response.json()
     except json.JSONDecodeError as error:
-        print(f'Ошибка формата JSON: {error}')
+        logger.error(f'Ошибка формата ответа: {error}')
     except requests.RequestException as error:
-        print(f'Возникла ошибка: {error}')
+        logger.error(
+            f'Не удалось получить ответ сервера: {error}')
 
 
 def check_response(response):
@@ -118,11 +119,6 @@ def main():
                 logger.debug('Домашние работы не найдены.')
         except (CurrentDateNotFound, CurrentDateWrongFormat) as error:
             logger.error(error)
-        except json.JSONDecodeError as error:
-            logger.error(f'Ошибка формата ответа: {error}')
-        except requests.RequestException as error:
-            logger.error(
-                f'Не удалось получить ответ сервера: {error}')
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(error)
