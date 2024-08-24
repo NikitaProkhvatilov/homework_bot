@@ -67,10 +67,9 @@ def get_api_answer(timestamp):
                 f'Неожиданный стаутс ответа: {response.status_code}')
         return response.json()
     except json.JSONDecodeError as error:
-        logger.error(f'Ошибка формата ответа: {error}')
+        raise (f'Ошибка формата ответа: {error}')
     except requests.RequestException as error:
-        logger.error(
-            f'Не удалось получить ответ сервера: {error}')
+        raise (f'Не удалось получить ответ сервера: {error}')
 
 
 def check_response(response):
