@@ -62,14 +62,16 @@ def get_api_answer(timestamp):
     """Отправка запроса и получение ответа."""
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=timestamp)
-        if response.status_code != 200:
-            raise WrongStatus(
-                f'Неожиданный стаутс ответа: {response.status_code}')
+    except requests.RequestException as error:
+        raise ConnectionError(
+            f'Не удалось получить ответ сервера: {error}')
+    if response.status_code != 200:
+        raise WrongStatus(
+            f'Неожиданный стаутс ответа: {response.status_code}')
+    try:
         return response.json()
     except json.JSONDecodeError as error:
-        raise (f'Ошибка формата ответа: {error}')
-    except requests.RequestException as error:
-        raise (f'Не удалось получить ответ сервера: {error}')
+        raise json.JSONDecodeError(f'Ошибка формата ответа: {error}')
 
 
 def check_response(response):
@@ -106,10 +108,12 @@ def main():
     """Основная логика работы бота."""
     bot = TeleBot(token=TELEGRAM_TOKEN)
     last_status = None
+    timestamp = 0
     check_tokens()
     while True:
         try:
-            answer = get_api_answer({'from_date': 0})
+            answer = get_api_answer({'from_date': timestamp})
+            timestamp = answer.get('current_date')
             homeworks = check_response(answer)
             if len(homeworks) != 0:
                 message = parse_status(homeworks[0])
