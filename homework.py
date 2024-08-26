@@ -64,7 +64,7 @@ def get_api_answer(timestamp):
         response = requests.get(ENDPOINT, headers=HEADERS, params=timestamp)
         if response.status_code != 200:
             raise WrongStatus(
-            f'Неожиданный стаутс ответа: {response.status_code}')
+                f'Неожиданный стаутс ответа: {response.status_code}')
         return response.json()
     except requests.RequestException as error:
         raise ConnectionError(
