@@ -62,16 +62,15 @@ def get_api_answer(timestamp):
     """Отправка запроса и получение ответа."""
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=timestamp)
+        if response.status_code != 200:
+            raise WrongStatus(
+            f'Неожиданный стаутс ответа: {response.status_code}')
+        return response.json()
     except requests.RequestException as error:
         raise ConnectionError(
             f'Не удалось получить ответ сервера: {error}')
-    if response.status_code != 200:
-        raise WrongStatus(
-            f'Неожиданный стаутс ответа: {response.status_code}')
-    try:
-        return response.json()
     except json.JSONDecodeError as error:
-        raise json.JSONDecodeError(f'Ошибка формата ответа: {error}')
+        raise ValueError(f'Ошибка формата ответа: {error}')
 
 
 def check_response(response):
@@ -113,8 +112,8 @@ def main():
     while True:
         try:
             answer = get_api_answer({'from_date': timestamp})
-            timestamp = answer.get('current_date')
             homeworks = check_response(answer)
+            timestamp = answer.get('current_date')
             if len(homeworks) != 0:
                 message = parse_status(homeworks[0])
             else:
